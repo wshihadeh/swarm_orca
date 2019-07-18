@@ -1,0 +1,200 @@
+namespace :deploy do
+  include Capistrano::SwarmOrca
+
+  namespace :stop do
+    desc "Stop all stacks"
+    task :all do
+      stacks.each do |stack|
+        invoke "deploy:stop:#{stack}"
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Stop #{stack}"
+      task stack do
+        invoke "docker:deploy:stop_#{stack}"
+      end
+    end
+  end
+
+  namespace :scale do
+    desc "scale all stacks to 0 instance"
+    task :all_zero do
+      stacks.each do |stack|
+        invoke "docker:deploy:scale_down_#{stack}"
+      end
+    end
+
+    desc "scale all stacks to 1 instance"
+    task :all_one do
+      stacks.each do |stack|
+        invoke "docker:deploy:scale_up_#{stack}"
+      end
+    end
+  end
+
+  namespace :start do
+    desc "Start all stacks"
+    task :all do
+      stacks.each do |stack|
+        invoke "deploy:start:#{stack}"
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Start #{stack}"
+      task stack do
+        invoke "docker:deploy:#{stack}"
+      end
+    end
+  end
+
+  stacks.each do |stack|
+    desc "Deploy #{stack}"
+    task stack do
+      pre_stack_specific_tasks stack if build_docker_images
+      invoke "docker:pull:#{stack}"
+      post_stack_specific_tasks stack
+      invoke "docker:deploy:#{stack}"
+    end
+  end
+
+  desc "Deploy all stacks and services"
+  task :all do
+    invoke "docker:deploy:cleanup"  if docker_cleanup
+    stacks.each do |stack|
+      invoke "deploy:#{stack}"
+    end
+  end
+
+  desc "Deploy all stacks Databases"
+  task :all_dbs do
+    application_stacks.each do |stack|
+      invoke "deploy:create_#{stack}_dbs"
+      invoke "deploy:seed_#{stack}_dbs"
+    end
+  end
+
+
+  desc "Build all docker custom docker images"
+  task :build_images do
+    stacks.each do |stack|
+       pre_stack_specific_tasks stack
+    end
+  end
+
+  desc "Seed all stacks Databases defined in SEEDED_STACKS ENV var"
+  task :seed_auto do
+    seeded_stacks =  ENV.fetch('SEEDED_STACKS', '').split(' ') & application_stacks
+    seeded_stacks.each do |stack|
+      invoke "deploy:seed_#{stack}_dbs"
+    end
+  end
+
+  desc "Recreate all Databases"
+  task :recreate_all_dbs do
+    application_stacks.each do |stack|
+      invoke "deploy:drop_#{stack}_dbs"
+      invoke "deploy:create_#{stack}_dbs"
+    end
+  end
+
+  desc "Deploy all stacks and services defined in DEPLOYED_STACKS ENV var"
+  task :auto do
+    invoke "deploy:setup"
+    invoke "docker:deploy:cleanup" if docker_cleanup
+    deployed_stacks =  ENV.fetch('DEPLOYED_STACKS', stacks.join(' ')).split(' ') & stacks
+    deployed_stacks.each do |stack|
+      invoke "deploy:#{stack}"
+    end
+  end
+
+  def pre_stack_specific_tasks(stack)
+    task = "docker:deploy:build_#{stack}"
+    invoke task if Rake::Task.task_defined?(task)
+  end
+
+  def post_stack_specific_tasks(stack)
+    stack_migrate_apps(stack) if application_stacks.include? stack
+    stack_reindex_apps(stack) if stack.eql? 'community'
+  end
+
+  def stack_migrate_apps(stack)
+    Rake::Task["deploy:migrate_#{stack}_dbs"].invoke(stack)
+  end
+
+  def stack_seed_apps(stack)
+    Rake::Task["deploy:seed_#{stack}_dbs"].invoke(stack)
+  end
+
+  def stack_reindex_apps(stack)
+    fetch_config(stack, 'reindex_apps').split.each do |app|
+      Rake::Task["docker:deploy:reindex_elasticsearch_#{app}"].invoke(stack)
+    end
+  end
+
+  application_stacks.each do |stack|
+    desc "Create #{stack} Databases"
+    task "create_#{stack}_dbs".to_sym do
+      fetch_stack_db_apps(stack).each do |app|
+        Rake::Task["docker:deploy:create_#{app}_db"].invoke(stack)
+      end
+    end
+  end
+
+  application_stacks.each do |stack|
+    fetch_stack_db_apps(stack).each do |app|
+      desc "Execute #{app} one Time Data Migration"
+      task "otm_#{app}".to_sym, :task_name do |t, args|
+        raise "Please provide migration name. ie. deploy:otm_#{app}[MIGRATION]" unless args.key?(:task_name)
+        Rake::Task["docker:deploy:otm_#{app}"].invoke(stack, args[:task_name])
+      end
+    end
+  end
+
+  application_stacks.each do |stack|
+    desc "Drop #{stack} Databases"
+    task "drop_#{stack}_dbs".to_sym do
+      fetch_stack_db_apps(stack).each do |app|
+        Rake::Task["docker:deploy:drop_#{app}_db"].invoke(stack)
+      end
+    end
+  end
+
+  application_stacks.each do |stack|
+    desc "Seed #{stack} Databases"
+    task "seed_#{stack}_dbs".to_sym do
+      fetch_stack_db_apps(stack).each do |app|
+        Rake::Task["docker:deploy:seed_#{app}_db"].invoke(stack)
+      end
+    end
+  end
+
+  application_stacks.each do |stack|
+    desc "Migrate #{stack} Databases"
+    task "migrate_#{stack}_dbs".to_sym do
+      fetch_stack_db_apps(stack).each do |app|
+        Rake::Task["docker:deploy:migrate_#{app}"].invoke(stack)
+      end
+    end
+  end
+
+  desc "Setup Deployment Project"
+  task :setup do
+    invoke "deploy"
+    invoke "docker:deploy:create_network"
+  end
+
+  desc "Setup Deployment Project"
+  task :development_setup do
+    invoke "deploy"
+    invoke "docker:deploy:create_network"
+    all_service_stacks.each do |stack|
+      invoke "deploy:#{stack}"
+    end
+    invoke "deploy:all_dbs"
+    application_stacks.each do |stack|
+      invoke "deploy:#{stack}"
+    end
+  end
+end

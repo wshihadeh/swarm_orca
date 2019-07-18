@@ -1,0 +1,28 @@
+require 'capistrano/dsl'
+
+set (:fork) { "wshihadeh" }
+set (:repo_url) { ENV["REPO_URL"] || "git@github.com:#{ENV.fetch('FORK', fetch(:fork))}/orca.git" }
+
+# Default branch is :master
+if branch = ENV["BRANCH"]
+  set :branch, branch
+else
+  ask :branch, `git rev-parse --abbrev-ref HEAD`.chomp
+end
+
+set :keep_releases, 5
+set (:application) { "orca" }
+set (:deploy_to) { "$HOME/orca" }
+set :pty, true
+
+set (:service_stacks) { %w(elasticsearch rabbitmq errbit mysql) }
+set (:service_stacks_with_build_image) { %w(nginx redis) }
+
+set (:db_apps_stacks_mapping), {}
+
+set (:elasticsearch_apps) {}
+
+set (:docker_path) { "" }
+set (:docker_cleanup) { %w(yes 1 true).include? ENV.fetch("PRUNE", 'true') }
+
+set (:auto_image_build){ %w(yes 1 true).include? ENV.fetch("BUILD_IMAGE", 'true') }

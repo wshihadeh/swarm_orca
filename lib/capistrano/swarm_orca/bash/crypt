@@ -1,0 +1,1 @@
+if [[ -z "$ENCRYPTION_KEY" ]]; then echo "Please define the ENCRYPTION_KEY"; exit 1; fi;function decrypt() { local value="$1";echo "$value" | openssl enc -d -aes-256-cbc -base64 -K "$ENCRYPTION_KEY" -iv 2adae58101d71b14cbfa3bdaf17d26c8; }

@@ -1,0 +1,318 @@
+namespace :docker do
+  include Capistrano::SwarmOrca
+  namespace :rm do
+    stacks.each do |stack|
+      desc "Docker Remove #{stack}"
+      task stack do
+        shell_command = <<-EOF
+          #{env_vars_command stack}
+          #{docker_command} stack rm $STACK_NAME
+        EOF
+
+        on roles(stack.to_sym) do |host|
+         execute_orca_script(host, shell_command, "remove_#{stack}")
+        end
+      end
+    end
+  end
+
+  namespace :deploy do
+    def seed_cmd(application)
+      seed_file_path = File.join('seeds', "#{application}.rb")
+      seed_file_on_host = File.join('..', seed_file_path)
+      seed_file_on_server = File.join('/tmp', seed_file_path)
+      return "rails runner #{seed_file_on_server}" if File.exist?(seed_file_on_host)
+      return 'rake db:seed'
+    end
+
+    def db_command(stack, application, command)
+      config = "-e DATABASE_URL=$#{application.upcase}_DATABASE_URL"
+      config = "#{config} #{env_vars_command_for_docker stack}"
+      config = "#{config} -v \$PWD/seeds:/tmp/seeds:ro"
+
+      prefix = fetch_config(stack, 'docker_image_prefix')
+      image = fetch_config(stack, "#{application}_docker_image")
+      tag = fetch_config(stack, "#{application}_docker_image_tag")
+
+      config = config.tr("\n",'').strip
+
+      "#{docker_command}  run --network=#{fetch(:network)} #{config} -i #{prefix}#{image}:#{tag} /bin/sh -c \"#{command}\""
+    end
+
+    db_apps.each do |app|
+      desc "migrate #{app}"
+      task "migrate_#{app}".to_sym, :stack do |t, args|
+        stack = args[:stack]
+        data_migrate = ":with_data" if fetch_config(stack, "#{app}_data_migrate") == "true"
+        data_migrate_status = "db:migrate:status:with_data" if fetch_config(stack, "#{app}_data_migrate_status") == "true"
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{db_command stack, app, "rake db:migrate#{data_migrate} #{data_migrate_status}"}
+        EOF
+
+        on roles("#{stack}_db".to_sym) do |host|
+           execute_orca_script(host, shell_command, "migrate_#{stack}")
+        end
+      end
+    end
+
+   db_apps.each do |app|
+      desc "Execute one Time Data Migration"
+      task "otm_#{app}".to_sym, [:stack, :task_name] do |t, args|
+        stack     = args[:stack]
+        task_name = args[:task_name]
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{db_command stack, app, "rake one_time_migrations:#{task_name}"}
+        EOF
+
+        on roles("#{stack}_db".to_sym) do |host|
+          execute_orca_script(host, shell_command, "otm_migrate_#{stack}")
+        end
+      end
+    end
+
+   db_apps.each do |app|
+      desc "drop db #{app}"
+      task "drop_#{app}_db".to_sym, :stack do |t, args|
+        stack = args[:stack]
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{db_command stack, app, 'rake db:drop DISABLE_DATABASE_ENVIRONMENT_CHECK=1'}
+        EOF
+
+        on roles("#{stack}_db".to_sym) do |host|
+          execute_orca_script(host, shell_command, "drop_db_#{stack}")
+        end
+      end
+    end
+
+    db_apps.each do |app|
+      desc "created db #{app}"
+      task "create_#{app}_db".to_sym, :stack do |t, args|
+        stack = args[:stack]
+        data_migrate = ':with_data' if fetch_config(stack, "#{app}_data_migrate") == 'true'
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{db_command stack, app, "rake db:create && ( rake db:schema:load#{data_migrate} || rake db:drop db:create db:migrate#{data_migrate} )"}
+        EOF
+
+        on roles("#{stack}_db".to_sym) do |host|
+          execute_orca_script(host, shell_command, "create_db_#{stack}")
+        end
+      end
+    end
+
+    db_apps.each do |app|
+      desc "seed db #{app}"
+      task "seed_#{app}_db".to_sym, :stack do |t, args|
+        stack = args[:stack]
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{db_command stack, app, seed_cmd(app)}
+        EOF
+
+        on roles("#{stack}_db".to_sym) do |host|
+          execute_orca_script(host, shell_command, "seed_db_#{stack}")
+        end
+      end
+    end
+
+    elasticsearch_apps.each do |app|
+      desc "reindex elasticsearch #{app}"
+      task "reindex_elasticsearch_#{app}".to_sym, :stack do |t, args|
+        stack = args[:stack]
+
+        shell_command = <<-EOF
+           cd #{current_path}
+           #{env_vars_command stack}
+           #{db_command stack, app, 'bundle exec rake searchkick:reindex:all'}
+        EOF
+
+        on roles("#{stack}_reindex".to_sym) do |host|
+          execute_orca_script(host, shell_command, "searchkick_reindex_#{stack}")
+        end
+      end
+    end
+
+    service_stacks_with_build_image.each do |stack|
+      task "build_#{stack}".to_sym do
+
+        prefix = fetch_config(stack, "docker_image_prefix")
+        image  = fetch_config(stack, "#{stack}_docker_image")
+        tag    = fetch_config(stack, "#{stack}_docker_image_tag") || "latest"
+
+        image_name = "#{prefix}#{image}:#{tag}"
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{docker_command}  build -q -t #{image_name} #{stack}
+          #{docker_command}  push #{image_name} | cat
+        EOF
+
+        on roles(stack.to_sym) do |host|
+          execute_orca_script(host, shell_command, "build_image_#{stack}")
+        end
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Deploy #{stack}"
+      task stack do
+
+        shell_erb_command = <<-EOF
+          cd #{current_path}
+          (#{env_vars_command stack}; echo "<% #{erb_vars_command stack} %>" && cat application_stack/docker-stack-#{stack}.yml.erb) | erb > application_stack/docker-stack-#{stack}.yml
+        EOF
+
+        shell_deploy_command = <<-EOF
+          cd #{current_path}
+          #{env_vars_command stack}
+          #{docker_command} stack deploy -c application_stack/docker-stack-#{stack}.yml #{fetch_config(stack, 'stack_name')}
+        EOF
+
+        on roles(stack.to_sym) do |host|
+          execute_orca_script(host, shell_erb_command, "genrate_stack_#{stack}") if docker_erb_templates
+          execute_orca_script(host, shell_deploy_command, "deploy_#{stack}")
+        end
+      end
+    end
+
+    desc "Create docker network"
+    task :create_network do
+
+       shell_command = <<-EOF
+         #{docker_command} network create --driver=overlay --attachable #{fetch(:network)} || true
+       EOF
+
+      on roles(:swarm_manager) do |host|
+        execute_orca_script(host, shell_command, "create_network")
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Stop #{stack}"
+      task "stop_#{stack}".to_sym do
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{docker_command} stack rm #{stack}
+        EOF
+
+        on roles(stack.to_sym) do |host|
+          execute_orca_script(host, shell_command, "stop_#{stack}")
+        end
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Scale #{stack} to 0 instances"
+      task "scale_down_#{stack}".to_sym do
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{docker_command} stack services #{fetch_config(stack, "stack_name")} --format "{{.Name}}" | xargs -I % docker service scale %=0 > /dev/null
+        EOF
+
+        on roles(stack.to_sym) do |host|
+          execute_orca_script(host, shell_command, "scale_down_#{stack}")
+        end
+      end
+    end
+
+    stacks.each do |stack|
+      desc "Scale #{stack} to 1 instances"
+      task "scale_up_#{stack}".to_sym do
+
+        shell_command = <<-EOF
+          cd #{current_path}
+          #{docker_command} stack services #{fetch_config(stack, "stack_name")} --format "{{.Name}}" | xargs -I % docker service scale %=1 > /dev/null
+        EOF
+
+        on roles(stack.to_sym) do |host|
+          execute_orca_script(host, shell_command, "scale_up_#{stack}")
+        end
+      end
+    end
+
+    desc "docker cleanup"
+    task :cleanup do
+      s_line = "------------------------------------------------------------"
+
+      shell_command = <<-EOF
+        echo #{s_line}; echo "Removing stopped containers.."
+        echo #{s_line}; #{docker_command} container prune -f
+        echo #{s_line}; echo "Removing unused images..."
+        echo #{s_line}; #{docker_command} image prune -a -f
+      EOF
+
+      on roles(:all) do |host|
+        execute_orca_script(host, shell_command, "cleanup")
+      end
+    end
+
+    desc "docker info"
+    task :info do
+      s_line = "------------------------------------------------------------"
+
+      shell_command = <<-EOF
+        echo #{s_line}; echo "Running docker stacks"
+        echo #{s_line}; #{docker_command} stack ls
+        echo #{s_line}; echo "Running docker services"
+        echo #{s_line}; #{docker_command} service ls
+        echo #{s_line}; echo "Docker services info"
+        echo #{s_line}; for service in $(docker service ls -q); do #{docker_command} service ps $service; echo #{s_line}; done
+      EOF
+
+      on roles(:swarm_manager) do |host|
+        execute_orca_script(host, shell_command, "info")
+      end
+    end
+  end
+
+  namespace :pull do
+
+    def docker_images(stack)
+      fetch_application_config(stack).keys.map  do |key|
+       key.to_s.sub(/_docker_image[_a-z]*/, "") if  key =~ /_docker_image/
+      end.compact.uniq.map do |app|
+        prefix = fetch_config(stack, "docker_image_prefix")
+        image = fetch_config(stack, "#{app}_docker_image")
+        tag = fetch_config(stack, "#{app}_docker_image_tag") || "latest"
+        "#{prefix}#{image}:#{tag}"
+      end
+    end
+    desc "Pull All images"
+    task :all do
+      stacks.each do |stack|
+        invoke "docker:pull:#{stack}"
+      end
+    end
+    stacks.each do |stack|
+      desc "Pull #{stack} docker image"
+      task stack do
+        on roles(stack.to_sym) do |host|
+         docker_images(stack).each do |docker_image|
+            shell_command = <<-EOF
+              echo "Pull #{stack} docker image #{docker_image}"
+              #{docker_command} pull #{docker_image} | cat
+            EOF
+
+            execute_orca_script(host, shell_command, "pull_docker_image_#{stack}")
+          end
+        end
+      end
+    end
+  end
+end
