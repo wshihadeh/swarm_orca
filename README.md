@@ -95,8 +95,6 @@ set :mysql,
   {application}_docker_image: Docker image name
   {application}_docker_image_tag: Docker image tag.
 
-
-
 ## Application Seeds
 
 - Define your application seeds

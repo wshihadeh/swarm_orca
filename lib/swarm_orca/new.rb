@@ -29,7 +29,6 @@ module SwarmOrca
           capistrano/Capfile
           nginx/Dockerfile
           nginx/nginx.conf
-          nginx/htpasswd
           redis/Dockerfile
           redis/redis.conf
           capistrano/config/deploy/template_stage.rb

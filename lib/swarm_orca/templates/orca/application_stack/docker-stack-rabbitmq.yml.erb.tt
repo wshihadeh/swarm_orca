@@ -1,7 +1,7 @@
 version: '3.7'
 
 networks:
-  <%= NETWORK %>:
+  <%%= NETWORK %>:
     external: true
 
 services:
@@ -16,4 +16,4 @@ services:
     deploy:
       replicas: 1
     networks:
-      - <%= NETWORK %>
+      - <%%= NETWORK %>

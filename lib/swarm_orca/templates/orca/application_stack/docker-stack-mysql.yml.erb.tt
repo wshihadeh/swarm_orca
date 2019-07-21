@@ -1,7 +1,7 @@
 version: '3.7'
 
 networks:
-  <%= NETWORK %>:
+  <%%= NETWORK %>:
     external: true
 
 services:
@@ -14,4 +14,4 @@ services:
       - MYSQL_ROOT_PASSWORD=dummy
     deploy:
     networks:
-      - <%= NETWORK %>
+      - <%%= NETWORK %>
