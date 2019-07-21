@@ -1,0 +1,19 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  redis:
+    image: ${DOCKER_IMAGE_PREFIX}${REDIS_DOCKER_IMAGE}:${REDIS_DOCKER_IMAGE_TAG}
+    ports:
+      - '${PORT}:6379'
+    volumes:
+    - ${NFS_MOUNT}:/data
+    command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+    deploy:
+      replicas: 1
+    networks:
+      - <%= NETWORK %>

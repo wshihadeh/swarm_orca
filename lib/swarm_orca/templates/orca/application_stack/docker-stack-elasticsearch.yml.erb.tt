@@ -1,0 +1,22 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  # --- ELASTICSEARCH ---
+
+  elasticsearch:
+    image: ${ELASTICSEARCH_DOCKER_IMAGE}:${ELASTICSEARCH_DOCKER_IMAGE_TAG}
+    ports:
+    - ${ELASTIC_FIRST_PORT}:9200/tcp
+    - ${ELASTIC_SECOND_PORT}:9300/tcp
+    environment:
+      $$$$$$$$PWD/config: /usr/share/elasticsearch/config
+      $$$$$$$$PWD/esdata: /usr/share/elasticsearch/data
+    deploy:
+      replicas: 1
+    networks:
+      - <%= NETWORK %>

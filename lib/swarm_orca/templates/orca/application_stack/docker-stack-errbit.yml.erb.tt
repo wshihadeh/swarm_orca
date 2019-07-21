@@ -1,0 +1,43 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  mongo_db:
+    image: ${ERRBIT_DB_DOCKER_IMAGE}:${ERRBIT_DB_DOCKER_IMAGE_TAG}
+    volumes:
+      - ${MONGO_VOLUME}:/data/db
+    deploy:
+      replicas: 1
+    networks:
+      - <%= NETWORK %>
+
+  errbit_web:
+    image: ${ERRBIT_DOCKER_IMAGE}:${ERRBIT_DOCKER_IMAGE_TAG}
+    environment:
+      SECRET_KEY_BASE: 152944e50d19ab5601f3ef9bcc15d428fe6cd0d0c94a832b13528f6d5b0f82e6e957a1638695c37af94b3c1bd0f98fb1d0a98951d9ce964c8781892be644ecd0
+      RACK_ENV: production
+      MONGO_URL: 'mongodb://mongo_db'
+      ERRBIT_HOST: ${ERRBIT_HOST}
+      ERRBIT_PROTOCOL: ${ERRBIT_PROTOCOL}
+      ERRBIT_PORT: ${ERRBIT_PORT}
+      GOOGLE_AUTHENTICATION: 'false'
+      GITHUB_AUTHENTICATION: 'false'
+      ERRBIT_LOG_LOCATION: 'STDOUT'
+      PORT: '8080'
+      ERRBIT_USER_HAS_USERNAME: 'true'
+      ERRBIT_PER_APP_NOTIFY_AT_NOTICES: 'true'
+      LDAP_HOST: ${LDAP_HOST}
+      LDAP_USER: ${LDAP_USER}
+      LDAP_PASSWORD: ${LDAP_PASSWORD}
+      http_proxy: ${HTTP_PROXY}
+      https_proxy: ${HTTPS_PROXY}
+      no_proxy: ${NO_PROXY}
+    healthcheck:
+      test: "curl --fail http://localhost:8080/users/sign_in || exit 1"
+      interval: 5s
+    networks:
+      - <%= NETWORK %>
