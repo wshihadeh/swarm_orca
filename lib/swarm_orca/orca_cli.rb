@@ -17,9 +17,9 @@ module SwarmOrca
 
       def new(orca_directory_name, git_fork, docker_network)
         New.new(root_dir: Dir.pwd,
-                orca_directory_name: orca_directory_name,
+                orca_dir_name: orca_directory_name,
                 git_fork: git_fork,
-                docker_network: docker_network).execute
+                network: docker_network).execute
       end
 
       desc 'gen_enc_key', 'This Command will generate new encryption key'

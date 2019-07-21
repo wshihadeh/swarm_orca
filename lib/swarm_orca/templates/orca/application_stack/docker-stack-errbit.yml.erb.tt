@@ -1,7 +1,7 @@
 version: '3.7'
 
 networks:
-  <%= NETWORK %>:
+  <%%= NETWORK %>:
     external: true
 
 services:
@@ -13,7 +13,7 @@ services:
     deploy:
       replicas: 1
     networks:
-      - <%= NETWORK %>
+      - <%%= NETWORK %>
 
   errbit_web:
     image: ${ERRBIT_DOCKER_IMAGE}:${ERRBIT_DOCKER_IMAGE_TAG}
@@ -40,4 +40,4 @@ services:
       test: "curl --fail http://localhost:8080/users/sign_in || exit 1"
       interval: 5s
     networks:
-      - <%= NETWORK %>
+      - <%%= NETWORK %>
