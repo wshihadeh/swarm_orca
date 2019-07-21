@@ -1,0 +1,19 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  # --- RABBITMQ ---
+
+  rabbitmq:
+    image: ${RABBITMQ_DOCKER_IMAGE}:${RABBITMQ_DOCKER_IMAGE_TAG}
+    hostname: rabbitmq
+    volumes:
+      - ${RABBITMQ_VOLUME}:/var/lib/rabbitmq
+    deploy:
+      replicas: 1
+    networks:
+      - <%= NETWORK %>

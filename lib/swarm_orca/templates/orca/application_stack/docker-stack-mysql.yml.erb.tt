@@ -1,0 +1,17 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  mysql:
+    image: ${MYSQL_DOCKER_IMAGE}:${MYSQL_DOCKER_IMAGE_TAG}
+    volumes:
+      - ${MYSQL_VOLUME}:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=dummy
+    deploy:
+    networks:
+      - <%= NETWORK %>

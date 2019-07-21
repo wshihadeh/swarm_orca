@@ -1,0 +1,22 @@
+version: '3.7'
+
+networks:
+  <%= NETWORK %>:
+    external: true
+
+services:
+
+  # --- NGINX ---
+
+  nginx:
+    image: ${NGINX_DOCKER_IMAGE}:${NGINX_DOCKER_IMAGE_TAG}
+    ports:
+      - '${PORT_HTTP}:80'
+      - '${PORT_HTTPS}:443'
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 3s
+    networks:
+      - <%= NETWORK %>

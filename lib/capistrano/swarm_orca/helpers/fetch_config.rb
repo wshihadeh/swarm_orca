@@ -37,8 +37,7 @@ module Capistrano
 
     def fetch_application_config(stack)
       included_shared_config = fetch(stack.to_s.to_sym).fetch(:include_shared_config, '')
-      config = fetch(:shared, {}).merge(fetch(included_shared_config.to_sym, {})).merge(fetch(stack.to_s.to_sym, {}))
-      config.merge(orca_network: fetch(:network))
+      fetch(:shared, {}).merge(fetch(included_shared_config.to_sym, {})).merge(fetch(stack.to_s.to_sym, {}))
     end
 
     def fetch_stack_db_apps(stack)
